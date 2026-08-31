@@ -1,4 +1,4 @@
-package com.streampay.payment.Service;
+package com.streampay.payment.service;
 
 import com.streampay.payment.dto.CreatePaymentRequest;
 import com.streampay.payment.dto.PaymentResponse;
