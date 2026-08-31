@@ -1,4 +1,4 @@
-package com.streampay.payment.service;
+package com.streampay.payment.Service;
 
 import com.streampay.payment.dto.CreatePaymentRequest;
 import com.streampay.payment.dto.PaymentResponse;
@@ -9,7 +9,6 @@ import com.streampay.payment.repository.PaymentRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
 import java.util.UUID;
 
 @Service

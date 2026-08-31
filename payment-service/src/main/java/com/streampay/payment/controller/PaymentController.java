@@ -1,6 +1,6 @@
 package com.streampay.payment.controller;
 
-import com.streampay.payment.service.PaymentService;
+import com.streampay.payment.Service.PaymentService;
 import com.streampay.payment.dto.CreatePaymentRequest;
 import com.streampay.payment.dto.PaymentResponse;
 
