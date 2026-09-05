@@ -1,5 +1,7 @@
 package com.streampay.authentication.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.streampay.authentication.dto.ErrorResponseDto;
 import com.streampay.authentication.filter.JwtAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -10,13 +12,17 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import java.time.LocalDateTime;
+
 @Configuration
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ObjectMapper objectMapper;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter, ObjectMapper objectMapper) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.objectMapper = objectMapper;
     }
 
     @Bean
@@ -34,7 +40,8 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/login",
-                                "/api/v1/auth/refresh"
+                                "/api/v1/auth/refresh",
+                                "/api/v1/auth/logout"
                         ).permitAll()
                         .requestMatchers("/api/v1/auth/customer")
                         .hasRole("CUSTOMER")
@@ -47,12 +54,38 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(exception -> exception
+
                         .authenticationEntryPoint(
-                                (request, response, authException) ->
-                                        response.sendError(
-                                                HttpServletResponse.SC_UNAUTHORIZED,
-                                                "Unauthorized"
-                                        )
+                                (request, response, authException) -> {
+
+                                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                                    response.setContentType("application/json");
+
+                                    ErrorResponseDto errorResponse = new ErrorResponseDto(
+                                            LocalDateTime.now(),
+                                            401,
+                                            "Unauthorized",
+                                            "Authentication required or token is invalid"
+                                    );
+                                    objectMapper.writeValue(response.getOutputStream(), errorResponse);
+                                }
+                        )
+
+                        .accessDeniedHandler(
+                                (request, response, accessDeniedException) -> {
+
+                                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                                    response.setContentType("application/json");
+
+                                    ErrorResponseDto errorResponse = new ErrorResponseDto(
+                                            LocalDateTime.now(),
+                                            403,
+                                            "Forbidden",
+                                            "You do not have permission to access this resource"
+                                    );
+
+                                    objectMapper.writeValue(response.getOutputStream(), errorResponse);
+                                }
                         )
                 )
                 .addFilterBefore(

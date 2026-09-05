@@ -1,13 +1,12 @@
 package com.streampay.authentication.controller;
 
 
-import com.streampay.authentication.dto.AuthResponse;
-import com.streampay.authentication.dto.LoginRequestDto;
-import com.streampay.authentication.dto.RefreshTokenRequest;
-import com.streampay.authentication.dto.UserRegisterRequestDto;
+import com.streampay.authentication.dto.*;
 import com.streampay.authentication.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -42,6 +41,13 @@ public class AuthController {
             @Valid @RequestBody RefreshTokenRequest request) {
 
         return authService.refreshToken(request);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<LogoutResponse> logout(@Valid @RequestBody RefreshTokenRequest request) {
+
+        return ResponseEntity.status(HttpStatus.OK).body(authService.logout(request.refreshToken()));
+
     }
 
 

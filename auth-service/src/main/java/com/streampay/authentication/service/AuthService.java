@@ -1,15 +1,14 @@
 package com.streampay.authentication.service;
 
-import com.streampay.authentication.dto.AuthResponse;
-import com.streampay.authentication.dto.LoginRequestDto;
-import com.streampay.authentication.dto.RefreshTokenRequest;
-import com.streampay.authentication.dto.UserRegisterRequestDto;
+import com.streampay.authentication.dto.*;
 import com.streampay.authentication.entities.RefreshToken;
 import com.streampay.authentication.entities.User;
+import com.streampay.authentication.exception.*;
 import com.streampay.authentication.repository.RefreshTokenRepository;
 import com.streampay.authentication.repository.UserRepository;
 import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cglib.core.Local;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -28,19 +27,22 @@ public class AuthService {
 
     private final long refreshTokenExpiration;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService, RefreshTokenRepository refreshTokenRepository, @Value("${jwt.refresh-token-expiration}") long refreshTokenExpiration)
+    private final TokenHashService tokenHashService;
+
+    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService, RefreshTokenRepository refreshTokenRepository, @Value("${jwt.refresh-token-expiration}") long refreshTokenExpiration, TokenHashService tokenHashService)
     {
         this.userRepository = userRepository;
         this.passwordEncoder=passwordEncoder;
         this.jwtService = jwtService;
         this.refreshTokenRepository = refreshTokenRepository;
         this.refreshTokenExpiration = refreshTokenExpiration;
+        this.tokenHashService = tokenHashService;
     }
 
     public void register(UserRegisterRequestDto userRegisterRequestDto)
     {
         if (userRepository.existsByEmail(userRegisterRequestDto.email())) {
-            throw new RuntimeException("Email already registered");
+            throw new UserAlreadyExistsException("Email already registered");
         }
 
         User user= User.builder().email(userRegisterRequestDto.email()).
@@ -58,11 +60,11 @@ public class AuthService {
         String password=loginRequestDto.password();
 
         // details of user from DB
-        User user=userRepository.findByEmail(email).orElseThrow(()->new RuntimeException("User does not exist"));
+        User user=userRepository.findByEmail(email).orElseThrow(()->new UserNotFoundException("User not found"));
 
 
         if(!passwordEncoder.matches(password, user.getPassword())){
-             throw new RuntimeException("Password is incorrect");
+             throw new InvalidCredentialsException("Incorrect Password");
         }
 
         // generate JWT tokens
@@ -71,7 +73,7 @@ public class AuthService {
 
         // store refresh token in DB
         RefreshToken refreshTokenEntity= RefreshToken.builder().
-                                            token(refreshToken).
+                                            tokenHash(tokenHashService.hash(refreshToken)).
                                             revoked(false).
                                             user(user).
                                             createdAt(LocalDateTime.now()).
@@ -94,25 +96,25 @@ public class AuthService {
         try {
             claims = jwtService.extractClaims(refreshTokenRequest.refreshToken());
         } catch (Exception e) {
-            throw new RuntimeException("Invalid or expired refresh token");
+            throw new InvalidTokenException("Invalid or expired refresh token");
         }
 
 
         String tokenType=claims.get("tokenType",String.class);
         if(!"refresh".equals(tokenType))
         {
-            throw new RuntimeException("Invalid Refresh token");
+            throw new InvalidTokenException("Invalid or expired refresh token");
         }
-
-        RefreshToken refreshToken=refreshTokenRepository.findByToken(refreshTokenRequest.refreshToken())
-                                                         .orElseThrow(()-> new RuntimeException("Refresh token doesnt exist"));
+        String tokenHash=tokenHashService.hash(refreshTokenRequest.refreshToken());
+        RefreshToken refreshToken=refreshTokenRepository.findByTokenHash(tokenHash)
+                                                         .orElseThrow(()-> new InvalidTokenException("Refresh token doesnt exist"));
 
         if(refreshToken.isRevoked()){
-            throw new RuntimeException("Token revoked, Login again");
+            throw new TokenRevokedException("Token revoked, Login again");
         }
         if(!refreshToken.getExpiresAt().isAfter(LocalDateTime.now())){
            //  jwtService.generateRefreshToken(claims.getSubject(),claims.get("role").toString());
-            throw new RuntimeException("Token Expired,Login again");
+            throw new TokenExpiredException("Token Expired,Login again");
         }
 
         // old token revoke
@@ -125,7 +127,7 @@ public class AuthService {
         String newRefreshToken= jwtService.generateRefreshToken(claims.getSubject());
 
         RefreshToken newRefreshTokenEntity=RefreshToken.builder().
-                                                        token(newRefreshToken).
+                                                        tokenHash(tokenHashService.hash(newRefreshToken)).
                                                          user(user).
                                                          revoked(false).
                                                           createdAt(LocalDateTime.now()).
@@ -135,6 +137,35 @@ public class AuthService {
         refreshTokenRepository.save(newRefreshTokenEntity);
 
         return new AuthResponse(newAccessToken,newRefreshToken,"Bearer");
+    }
+
+
+    public LogoutResponse logout(String rawRefreshToken) {
+
+        // Validate JWT signature + expiry
+        try {
+            jwtService.extractClaims(rawRefreshToken);
+        } catch (Exception e) {
+            throw new InvalidTokenException("Invalid or expired refresh token");
+        }
+
+        String tokenHash = tokenHashService.hash(rawRefreshToken);
+
+        RefreshToken refreshToken = refreshTokenRepository
+                .findByTokenHash(tokenHash)
+                .orElseThrow(() ->
+                        new InvalidTokenException("Refresh token does not exist")
+                );
+
+        if(refreshToken.isRevoked())
+        {
+            return new LogoutResponse("Already Logged out",LocalDateTime.now());
+        }
+
+
+        refreshToken.setRevoked(true);
+        refreshTokenRepository.save(refreshToken);
+        return new LogoutResponse("Logged out successfully", LocalDateTime.now());
     }
 
 
