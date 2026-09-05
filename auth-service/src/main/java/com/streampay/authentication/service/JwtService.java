@@ -29,25 +29,24 @@ public class JwtService {
     }
 
     public String generateAccessToken(String email,String role){
-        return generateToken(email,role,accessTokenExpiration);
+        return generateToken(email,"access",role,accessTokenExpiration);
     }
 
-    public String generateRefreshToken(String email,String role){
-        return generateToken(email,role,refreshTokenExpiration);
+    public String generateRefreshToken(String email){
+        return generateToken(email,"refresh",null,refreshTokenExpiration);
     }
 
-    private String generateToken(String email, String role, long expiration) {
+    private String generateToken(String email,String tokenType, String role, long expiration) {
 
         Date now=new Date();
         Date expiry=new Date(now.getTime()+expiration);
 
         HashMap<String,String> claims=new HashMap<>();
         claims.put("email",email);
+        claims.put("tokenType",tokenType);
         if(role!=null)
         {
             claims.put("role",role);
-        }else{
-            role="customer";
         }
 
         return Jwts.builder().
