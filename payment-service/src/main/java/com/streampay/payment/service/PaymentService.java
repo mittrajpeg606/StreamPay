@@ -21,7 +21,7 @@ public class PaymentService {
         this.paymentRepository=paymentRepository;
     }
 
-    public PaymentResponse createPayment(CreatePaymentRequest createPaymentRequest)
+    public PaymentResponse createPayment(CreatePaymentRequest createPaymentRequest,String customerEmail)
     {
         Payment payment= Payment.builder().paymentReference(getPaymentReference()).
                                            customerId(createPaymentRequest.customerId()).
@@ -31,6 +31,7 @@ public class PaymentService {
                                            currency(createPaymentRequest.currency()).
                                            createdAt(LocalDateTime.now()).
                                            updatedAt(LocalDateTime.now()).
+                                           customerEmail(customerEmail).
                                            status(PaymentStatus.CREATED).build();
 
         return toResponse(paymentRepository.save(payment));
@@ -54,7 +55,8 @@ public class PaymentService {
                 payment.getMerchantId(),
                 payment.getAmount(),
                 payment.getCurrency(),
-                payment.getStatus());
+                payment.getStatus(),
+                payment.getCustomerEmail());
     }
 
     private String getPaymentReference() {

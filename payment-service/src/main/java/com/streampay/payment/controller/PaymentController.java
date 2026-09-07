@@ -7,6 +7,7 @@ import com.streampay.payment.dto.PaymentResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -19,9 +20,11 @@ public class PaymentController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public PaymentResponse createPayment(
-            @Valid @RequestBody CreatePaymentRequest request) {
+            @Valid @RequestBody CreatePaymentRequest request, Authentication authentication) {
 
-        return paymentService.createPayment(request);
+        String customerEmail=authentication.getName();
+
+        return paymentService.createPayment(request,customerEmail);
     }
 
     @GetMapping("/{paymentReference}")

@@ -12,7 +12,8 @@ public record PaymentResponse(UUID id,
                               String merchantId,
                               BigDecimal amount,
                               String currency,
-                              PaymentStatus status
+                              PaymentStatus status,
+                              String customerEmail
 ) {
 
 }

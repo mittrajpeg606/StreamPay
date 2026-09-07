@@ -48,4 +48,7 @@ public class Payment {
 
     @Column(nullable = false)
     private LocalDateTime updatedAt;
+
+    @Column(nullable = false)
+    private String customerEmail;
 }
