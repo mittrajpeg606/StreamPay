@@ -67,6 +67,14 @@ public class GlobalExceptionHandler {
 
     }
 
+    @ExceptionHandler(InvalidPaymentStateException.class)
+    public ResponseEntity<ErrorResponse> invalidPaymentException(InvalidPaymentStateException exception)
+    {
+        ErrorResponse errorResponse=new ErrorResponse(HttpStatus.BAD_REQUEST.value(),exception.getMessage(),LocalDateTime.now());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+
+    }
+
 
 
 }

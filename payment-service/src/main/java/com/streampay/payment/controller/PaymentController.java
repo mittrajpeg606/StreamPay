@@ -7,6 +7,7 @@ import com.streampay.payment.dto.PaymentResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,8 +20,7 @@ public class PaymentController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public PaymentResponse createPayment(
-            @Valid @RequestBody CreatePaymentRequest request, Authentication authentication) {
+    public PaymentResponse createPayment( @Valid @RequestBody CreatePaymentRequest request, Authentication authentication) {
 
         String customerEmail=authentication.getName();
 
@@ -28,9 +28,15 @@ public class PaymentController {
     }
 
     @GetMapping("/{paymentReference}")
-    public PaymentResponse getPayment(
-            @PathVariable String paymentReference) {
+    public PaymentResponse getPayment( @PathVariable String paymentReference,Authentication authentication) {
 
-        return paymentService.getPayment(paymentReference);
+        String customerEmail=authentication.getName();
+        return paymentService.getPayment(paymentReference,customerEmail);
+    }
+
+    @PostMapping("/{paymentReference}/refund")
+    public ResponseEntity<String> refundPayment(@PathVariable String paymentReference,Authentication authentication) {
+
+       return ResponseEntity.ok().body("Refunded the amount");
     }
 }

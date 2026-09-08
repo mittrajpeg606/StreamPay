@@ -4,6 +4,7 @@ import com.streampay.payment.dto.CreatePaymentRequest;
 import com.streampay.payment.dto.PaymentResponse;
 import com.streampay.payment.entities.Payment;
 import com.streampay.payment.enums.PaymentStatus;
+import com.streampay.payment.exception.InvalidPaymentStateException;
 import com.streampay.payment.exception.PaymentNotFoundException;
 import com.streampay.payment.repository.PaymentRepository;
 import org.springframework.stereotype.Service;
@@ -38,9 +39,9 @@ public class PaymentService {
     }
 
 
-    public PaymentResponse getPayment(String paymentReference){
+    public PaymentResponse getPayment(String paymentReference,String customerEmail){
 
-        Payment payment=paymentRepository.findByPaymentReference(paymentReference)
+        Payment payment=paymentRepository.findByPaymentReferenceAndCustomerEmail(paymentReference,customerEmail)
                 .orElseThrow(()->new PaymentNotFoundException("Payment Not Found"));
 
         return toResponse(payment);
@@ -67,6 +68,33 @@ public class PaymentService {
                         .toUpperCase();
     }
 
+
+    private void updateStatus( Payment payment, PaymentStatus newStatus) {
+        PaymentStatus currentStatus = payment.getStatus();
+
+        boolean validTransition = switch (currentStatus) {
+
+            case CREATED ->
+                    newStatus == PaymentStatus.PROCESSING;
+
+            case PROCESSING ->
+                    newStatus == PaymentStatus.SUCCESS
+                            || newStatus == PaymentStatus.FAILED;
+
+            case SUCCESS ->
+                    newStatus == PaymentStatus.REFUNDED;
+
+            case FAILED, REFUNDED ->
+                    false;
+        };
+
+        if (!validTransition) {
+            throw new InvalidPaymentStateException("Invalid payment status transition: " + currentStatus + " -> " + newStatus);
+        }
+
+        payment.setStatus(newStatus);
+        payment.setUpdatedAt(LocalDateTime.now());
+    }
 
 
 

@@ -41,8 +41,13 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.POST,"/api/v1/payments/*/refund")
+                        .hasRole("MERCHANT")
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments")
-                        .hasRole("CUSTOMER")
+                        .hasAnyRole("CUSTOMER") 
+                        .requestMatchers(HttpMethod.GET, "/api/v1/payments/*")
+                        .hasAnyRole("CUSTOMER","MERCHANT")
+                        
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(exception -> exception
