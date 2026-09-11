@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.UUID;
 
 @Service
 public class JwtService {
@@ -28,15 +29,15 @@ public class JwtService {
         this.refreshTokenExpiration=refreshExpiration;
     }
 
-    public String generateAccessToken(String email,String role){
-        return generateToken(email,"access",role,accessTokenExpiration);
+    public String generateAccessToken(String email, String role, String merchantId, String id){
+        return generateToken(email,"access",role,merchantId,id,accessTokenExpiration);
     }
 
     public String generateRefreshToken(String email){
-        return generateToken(email,"refresh",null,refreshTokenExpiration);
+        return generateToken(email,"refresh",null,null,null,refreshTokenExpiration);
     }
 
-    private String generateToken(String email,String tokenType, String role, long expiration) {
+    private String generateToken(String email,String tokenType, String role,String merchantID,String id, long expiration) {
 
         Date now=new Date();
         Date expiry=new Date(now.getTime()+expiration);
@@ -44,6 +45,9 @@ public class JwtService {
         HashMap<String,String> claims=new HashMap<>();
         claims.put("email",email);
         claims.put("tokenType",tokenType);
+        claims.put("merchantId",merchantID);
+        claims.put("userId",id);
+
         if(role!=null)
         {
             claims.put("role",role);

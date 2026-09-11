@@ -5,6 +5,7 @@ import com.streampay.payment.dto.PaymentResponse;
 import com.streampay.payment.entities.Payment;
 import com.streampay.payment.enums.PaymentStatus;
 import com.streampay.payment.exception.InvalidPaymentStateException;
+import com.streampay.payment.exception.PaymentAccessDeniedException;
 import com.streampay.payment.exception.PaymentNotFoundException;
 import com.streampay.payment.kafka.PaymentEventProducer;
 import com.streampay.payment.kafka.dto.PaymentCreatedEvent;
@@ -65,6 +66,25 @@ public class PaymentService {
 
         return toResponse(payment);
 
+    }
+
+    public PaymentResponse getPaymentForMerchant(
+            String paymentReference,
+            String merchantId
+    ) {
+        Payment payment = paymentRepository
+                .findByPaymentReference(paymentReference)
+                .orElseThrow(() ->
+                        new PaymentNotFoundException("Payment Not Found")
+                );
+
+        if (!payment.getMerchantId().equals(merchantId)) {
+            throw new PaymentAccessDeniedException(
+                    "You do not have access to this payment"
+            );
+        }
+
+        return toResponse(payment);
     }
 
     public void processPayment(String paymentReference) {

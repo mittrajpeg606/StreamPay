@@ -1,4 +1,5 @@
 package com.streampay.payment.filter;
+import com.streampay.payment.dto.AuthenticatedUser;
 import com.streampay.payment.security.JwtService;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
@@ -13,6 +14,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.UUID;
+
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
@@ -42,17 +45,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String tokenType = claims.get("tokenType", String.class);
             String email = claims.getSubject();
             String role = claims.get("role", String.class);
+            UUID userId = UUID.fromString(claims.get("userId", String.class));
+            String merchantId = claims.get("merchantId", String.class);
 
             if (!"access".equals(tokenType)) {
                 filterChain.doFilter(request, response);
                 return;
             }
 
-            if (email != null && role != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            if (email != null && role != null && userId != null  && (!"ROLE_MERCHANT".equals(role) || merchantId != null)
+                    && SecurityContextHolder.getContext().getAuthentication() == null) {
+
+                AuthenticatedUser authenticatedUser =
+                        new AuthenticatedUser(
+                                email,
+                                userId,
+                                merchantId,
+                                role
+                        );
 
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(
-                                email,
+                                authenticatedUser,
                                 null,
                                 List.of(new SimpleGrantedAuthority(role))
                         );

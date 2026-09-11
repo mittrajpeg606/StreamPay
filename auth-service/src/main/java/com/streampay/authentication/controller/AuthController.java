@@ -70,7 +70,8 @@ public class AuthController {
 
     @GetMapping("/authenticatedUser")
     public Map<String, Object> getCurrentUser(Authentication authentication) {
+    AuthenticatedUser user=(AuthenticatedUser)authentication.getPrincipal();
 
-        return Map.of("email", authentication.getName(),"role", authentication.getAuthorities().iterator().next().getAuthority());
+        return Map.of("email",user.email(),"role", authentication.getAuthorities().iterator().next().getAuthority());
     }
 }

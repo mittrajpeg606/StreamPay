@@ -1,6 +1,7 @@
 package com.streampay.authentication.filter;
 
 
+import com.streampay.authentication.dto.AuthenticatedUser;
 import com.streampay.authentication.service.JwtService;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
@@ -15,6 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.UUID;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -41,9 +43,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             Claims claims = jwtService.extractClaims(token);
 
+
+
             String email = claims.getSubject();
-            String tokenType = claims.get("tokenType", String.class);
             String role = claims.get("role", String.class);
+            String merchantId= claims.get("merchantId",String.class);
+            String tokenType = claims.get("tokenType", String.class);
+            UUID userId=UUID.fromString(claims.get("userId", String.class));
+
+            String id=userId.toString();
 
 //            System.out.println("EMAIL = " + email);
 //            System.out.println("TOKEN TYPE = " + tokenType);
@@ -55,11 +63,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
-            if (email != null && role != null
-                    && SecurityContextHolder.getContext().getAuthentication() == null) {
+            if (email != null && role != null &&
+                    id !=null &&  (!"ROLE_MERCHANT".equals(role) || merchantId != null) && SecurityContextHolder.getContext().getAuthentication() == null) {
 
+                AuthenticatedUser authenticatedUser = new AuthenticatedUser(email,merchantId,userId, role);
                 UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(email, null, List.of(new SimpleGrantedAuthority(role))
+                        new UsernamePasswordAuthenticationToken(authenticatedUser, null, List.of(new SimpleGrantedAuthority(role))
                         );
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -73,6 +82,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
         } catch (Exception e) {
+            e.printStackTrace();
             SecurityContextHolder.clearContext();
         }
 

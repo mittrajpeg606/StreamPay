@@ -1,5 +1,6 @@
 package com.streampay.payment.controller;
 
+import com.streampay.payment.dto.AuthenticatedUser;
 import com.streampay.payment.kafka.PaymentEventProducer;
 import com.streampay.payment.kafka.dto.PaymentCreatedEvent;
 import com.streampay.payment.kafka.dto.PaymentEvent;
@@ -27,16 +28,20 @@ public class PaymentController {
     @ResponseStatus(HttpStatus.CREATED)
     public PaymentResponse createPayment( @Valid @RequestBody CreatePaymentRequest request, Authentication authentication) {
 
-        String customerEmail=authentication.getName();
-
-        return paymentService.createPayment(request,customerEmail);
+        AuthenticatedUser user = (AuthenticatedUser) authentication.getPrincipal();
+        return paymentService.createPayment(request,user.email());
     }
 
-    @GetMapping("/{paymentReference}")
-    public PaymentResponse getPayment( @PathVariable String paymentReference,Authentication authentication) {
 
-        String customerEmail=authentication.getName();
-        return paymentService.getPayment(paymentReference,customerEmail);
+    @GetMapping("/{paymentReference}")
+    public PaymentResponse getPayment(@PathVariable String paymentReference, Authentication authentication) {
+        AuthenticatedUser user = (AuthenticatedUser) authentication.getPrincipal();
+
+        if ("ROLE_MERCHANT".equals(user.role())) {
+            return paymentService.getPaymentForMerchant(paymentReference, user.merchantId());
+        }
+
+        return paymentService.getPayment(paymentReference, user.email());
     }
 
     @PostMapping("/{paymentReference}/refund")

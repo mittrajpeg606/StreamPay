@@ -10,7 +10,7 @@ public class PaymentProcessorImpl implements PaymentProcessor {
     public PaymentProcessingResult process(PaymentProcessingEvent event) {
 
         // Temporary payment gateway simulation
-        boolean success = false;
+        boolean success = true;
 
         if (success) {
             return new PaymentProcessingResult(event.paymentReference(),true,null);

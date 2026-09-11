@@ -13,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -45,12 +46,24 @@ public class AuthService {
             throw new UserAlreadyExistsException("Email already registered");
         }
 
+
+
         User user= User.builder().email(userRegisterRequestDto.email()).
                                   role("ROLE_"+userRegisterRequestDto.role()).
                                   password(passwordEncoder.encode(userRegisterRequestDto.password())).
+                                  merchantId("MERCHANT".equals(userRegisterRequestDto.role()) ? generateMerchantId() : null).
                                   createdAt(LocalDateTime.now()).build();
 
+
         userRepository.save(user);
+    }
+
+    private String generateMerchantId() {
+        return "MER-" +
+                UUID.randomUUID()
+                        .toString()
+                        .substring(0, 8)
+                        .toUpperCase();
     }
 
 
@@ -68,7 +81,7 @@ public class AuthService {
         }
 
         // generate JWT tokens
-        String accessToken=jwtService.generateAccessToken(user.getEmail(),user.getRole());
+        String accessToken=jwtService.generateAccessToken(user.getEmail(),user.getRole(),user.getMerchantId(),user.getId().toString());
         String refreshToken= jwtService.generateRefreshToken(user.getEmail());
 
         // store refresh token in DB
@@ -123,7 +136,7 @@ public class AuthService {
 
         // generate new tokens
         User user=refreshToken.getUser();
-        String newAccessToken=jwtService.generateAccessToken(claims.getSubject(), user.getRole());
+        String newAccessToken=jwtService.generateAccessToken(claims.getSubject(), user.getRole(), user.getMerchantId(),user.getId().toString());
         String newRefreshToken= jwtService.generateRefreshToken(claims.getSubject());
 
         RefreshToken newRefreshTokenEntity=RefreshToken.builder().

@@ -75,6 +75,12 @@ public class GlobalExceptionHandler {
 
     }
 
+    @ExceptionHandler(PaymentAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentAccessDenied(PaymentAccessDeniedException exception) {
+        ErrorResponse errorResponse=new ErrorResponse(HttpStatus.FORBIDDEN.value(),exception.getMessage(),LocalDateTime.now());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+    }
+
 
 
 }

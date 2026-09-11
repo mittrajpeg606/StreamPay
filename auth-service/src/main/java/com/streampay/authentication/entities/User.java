@@ -32,6 +32,7 @@ public class User {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
-
+    @Column(unique = true)
+    private String merchantId;
 
 }
