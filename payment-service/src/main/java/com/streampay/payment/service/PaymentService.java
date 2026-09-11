@@ -6,6 +6,11 @@ import com.streampay.payment.entities.Payment;
 import com.streampay.payment.enums.PaymentStatus;
 import com.streampay.payment.exception.InvalidPaymentStateException;
 import com.streampay.payment.exception.PaymentNotFoundException;
+import com.streampay.payment.kafka.PaymentEventProducer;
+import com.streampay.payment.kafka.dto.PaymentCreatedEvent;
+import com.streampay.payment.kafka.dto.PaymentFailedEvent;
+import com.streampay.payment.kafka.dto.PaymentProcessingEvent;
+import com.streampay.payment.kafka.dto.PaymentSuccessEvent;
 import com.streampay.payment.repository.PaymentRepository;
 import org.springframework.stereotype.Service;
 
@@ -17,9 +22,15 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
 
-    public PaymentService(PaymentRepository paymentRepository)
+    private final PaymentEventProducer paymentEventProducer;
+
+    private final PaymentProcessor paymentProcessor;
+
+    public PaymentService(PaymentRepository paymentRepository, PaymentEventProducer paymentEventProducer, PaymentProcessor paymentProcessor)
     {
         this.paymentRepository=paymentRepository;
+        this.paymentEventProducer = paymentEventProducer;
+        this.paymentProcessor = paymentProcessor;
     }
 
     public PaymentResponse createPayment(CreatePaymentRequest createPaymentRequest,String customerEmail)
@@ -35,6 +46,14 @@ public class PaymentService {
                                            customerEmail(customerEmail).
                                            status(PaymentStatus.CREATED).build();
 
+
+        PaymentCreatedEvent event=new PaymentCreatedEvent(payment.getPaymentReference(),
+                                                payment.getOrderId(),
+                                                payment.getCustomerId(),payment.getMerchantId(),
+                                                payment.getAmount(),payment.getCurrency(),payment.getCreatedAt());
+
+        paymentEventProducer.sendPaymentEvent(event);
+
         return toResponse(paymentRepository.save(payment));
     }
 
@@ -46,6 +65,59 @@ public class PaymentService {
 
         return toResponse(payment);
 
+    }
+
+    public void processPayment(String paymentReference) {
+
+        Payment payment = paymentRepository.findByPaymentReference(paymentReference)
+                .orElseThrow(() -> new PaymentNotFoundException("Payment Not Found"));
+
+        updateStatus(payment, PaymentStatus.PROCESSING);
+
+        paymentRepository.save(payment);
+
+        PaymentProcessingEvent event=new PaymentProcessingEvent(payment.getPaymentReference(),
+                payment.getOrderId(),
+                payment.getCustomerId(),payment.getMerchantId(),
+                payment.getAmount(),payment.getCurrency(),"processing",payment.getCreatedAt());
+
+        paymentEventProducer.sendPaymentEvent(event);
+    }
+
+    public void handlePaymentProcessing(PaymentProcessingEvent event) {
+
+        PaymentProcessingResult result = paymentProcessor.process(event);
+
+        if (result.success()) {
+
+            PaymentSuccessEvent successEvent = new PaymentSuccessEvent(
+                    event.paymentReference(),
+                    event.orderId(),
+                    event.customerId(),
+                    event.merchantId(),
+                    event.amount(),
+                    event.currency(),
+                    event.reason(),
+                    LocalDateTime.now()
+            );
+
+            paymentEventProducer.sendPaymentEvent(successEvent);
+
+        } else {
+
+            PaymentFailedEvent failedEvent = new PaymentFailedEvent(
+                    event.paymentReference(),
+                    event.orderId(),
+                    event.customerId(),
+                    event.merchantId(),
+                    event.amount(),
+                    event.currency(),
+                    result.reason(),
+                    LocalDateTime.now()
+            );
+
+            paymentEventProducer.sendPaymentEvent(failedEvent);
+        }
     }
 
     private PaymentResponse toResponse(Payment payment) {
@@ -97,5 +169,30 @@ public class PaymentService {
     }
 
 
+    public void markPaymentSuccess(String paymentReference) {
 
+        Payment payment = paymentRepository
+                .findByPaymentReference(paymentReference)
+                .orElseThrow(() ->
+                        new PaymentNotFoundException("Payment Not Found")
+                );
+
+        updateStatus(payment, PaymentStatus.SUCCESS);
+
+        paymentRepository.save(payment);
+    }
+
+
+    public void markPaymentFailed(String paymentReference) {
+
+        Payment payment = paymentRepository
+                .findByPaymentReference(paymentReference)
+                .orElseThrow(() ->
+                        new PaymentNotFoundException("Payment Not Found")
+                );
+
+        updateStatus(payment, PaymentStatus.FAILED);
+
+        paymentRepository.save(payment);
+    }
 }

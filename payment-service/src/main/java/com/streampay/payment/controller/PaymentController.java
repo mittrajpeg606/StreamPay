@@ -1,5 +1,8 @@
 package com.streampay.payment.controller;
 
+import com.streampay.payment.kafka.PaymentEventProducer;
+import com.streampay.payment.kafka.dto.PaymentCreatedEvent;
+import com.streampay.payment.kafka.dto.PaymentEvent;
 import com.streampay.payment.service.PaymentService;
 import com.streampay.payment.dto.CreatePaymentRequest;
 import com.streampay.payment.dto.PaymentResponse;
@@ -15,6 +18,8 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/payments")
 @RequiredArgsConstructor
 public class PaymentController {
+
+    private final PaymentEventProducer paymentEventProducer;
 
     private final PaymentService paymentService;
 
@@ -38,5 +43,12 @@ public class PaymentController {
     public ResponseEntity<String> refundPayment(@PathVariable String paymentReference,Authentication authentication) {
 
        return ResponseEntity.ok().body("Refunded the amount");
+    }
+    @PostMapping("/test-event")
+    public ResponseEntity<PaymentEvent> testKafkaProducer(@RequestBody PaymentCreatedEvent paymentCreatedEvent)
+    {
+
+        return ResponseEntity.status(HttpStatus.OK).body(paymentEventProducer.sendPaymentEvent(paymentCreatedEvent));
+
     }
 }
