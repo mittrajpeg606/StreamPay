@@ -4,6 +4,7 @@ import com.streampay.payment.dto.AuthenticatedUser;
 import com.streampay.payment.kafka.PaymentEventProducer;
 import com.streampay.payment.kafka.dto.PaymentCreatedEvent;
 import com.streampay.payment.kafka.dto.PaymentEvent;
+import com.streampay.payment.reconciliation.ReconciliationService;
 import com.streampay.payment.service.PaymentService;
 import com.streampay.payment.dto.CreatePaymentRequest;
 import com.streampay.payment.dto.PaymentResponse;
@@ -23,6 +24,8 @@ public class PaymentController {
     private final PaymentEventProducer paymentEventProducer;
 
     private final PaymentService paymentService;
+
+    private final ReconciliationService reconciliationService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -45,9 +48,13 @@ public class PaymentController {
     }
 
     @PostMapping("/{paymentReference}/refund")
-    public ResponseEntity<String> refundPayment(@PathVariable String paymentReference,Authentication authentication) {
+    public ResponseEntity<String> refundPayment(@PathVariable String paymentReference,Authentication authentication
+    ) {
+        AuthenticatedUser user = (AuthenticatedUser) authentication.getPrincipal();
 
-       return ResponseEntity.ok().body("Refunded the amount");
+        paymentService.refundPayment(paymentReference, user.merchantId());
+
+        return ResponseEntity.ok("Refund initiated successfully");
     }
     @PostMapping("/test-event")
     public ResponseEntity<PaymentEvent> testKafkaProducer(@RequestBody PaymentCreatedEvent paymentCreatedEvent)
@@ -55,5 +62,14 @@ public class PaymentController {
 
         return ResponseEntity.status(HttpStatus.OK).body(paymentEventProducer.sendPaymentEvent(paymentCreatedEvent));
 
+    }
+
+    @PostMapping("/{paymentReference}/reconcile")
+    public ResponseEntity<String> reconcilePayment(@PathVariable String paymentReference
+    ) {
+
+        reconciliationService.reconcile(paymentReference);
+
+        return ResponseEntity.ok("Payment reconciliation completed");
     }
 }

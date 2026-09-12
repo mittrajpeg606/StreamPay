@@ -10,6 +10,7 @@ public record PaymentCreatedEvent(
         String merchantId,
         BigDecimal amount,
         String currency,
-        LocalDateTime occuredAt
+        LocalDateTime occuredAt,
+        String eventType
 ) implements PaymentEvent{
 }

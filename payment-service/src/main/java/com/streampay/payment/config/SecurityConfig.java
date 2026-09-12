@@ -47,6 +47,8 @@ public class SecurityConfig {
                         .hasAnyRole("CUSTOMER") 
                         .requestMatchers(HttpMethod.GET, "/api/v1/payments/*")
                         .hasAnyRole("CUSTOMER","MERCHANT")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/payments/*/reconcile")
+                        .hasRole("ADMIN")
                         
                         .anyRequest().authenticated()
                 )

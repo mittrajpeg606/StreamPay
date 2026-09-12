@@ -38,5 +38,9 @@ public class PaymentEventConsumer {
             paymentService.markPaymentFailed(failedEvent.paymentReference()
             );
         }
+        else if (event instanceof PaymentRefundEvent refundEvent) {
+            System.out.println("Payment refunded: " + refundEvent.paymentReference()
+            );
+        }
     }
 }

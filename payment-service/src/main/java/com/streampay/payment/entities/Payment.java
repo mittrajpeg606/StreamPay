@@ -24,7 +24,7 @@ public class Payment {
     @Column(nullable = false, unique = true)
     private String paymentReference;
 
-    @Column(nullable = false)
+    @Column(nullable = false,unique = true)
     private String orderId;
 
     @Column(nullable = false)

@@ -8,10 +8,7 @@ import com.streampay.payment.exception.InvalidPaymentStateException;
 import com.streampay.payment.exception.PaymentAccessDeniedException;
 import com.streampay.payment.exception.PaymentNotFoundException;
 import com.streampay.payment.kafka.PaymentEventProducer;
-import com.streampay.payment.kafka.dto.PaymentCreatedEvent;
-import com.streampay.payment.kafka.dto.PaymentFailedEvent;
-import com.streampay.payment.kafka.dto.PaymentProcessingEvent;
-import com.streampay.payment.kafka.dto.PaymentSuccessEvent;
+import com.streampay.payment.kafka.dto.*;
 import com.streampay.payment.repository.PaymentRepository;
 import org.springframework.stereotype.Service;
 
@@ -36,6 +33,7 @@ public class PaymentService {
 
     public PaymentResponse createPayment(CreatePaymentRequest createPaymentRequest,String customerEmail)
     {
+
         Payment payment= Payment.builder().paymentReference(getPaymentReference()).
                                            customerId(createPaymentRequest.customerId()).
                                            orderId(createPaymentRequest.orderId()).
@@ -51,7 +49,7 @@ public class PaymentService {
         PaymentCreatedEvent event=new PaymentCreatedEvent(payment.getPaymentReference(),
                                                 payment.getOrderId(),
                                                 payment.getCustomerId(),payment.getMerchantId(),
-                                                payment.getAmount(),payment.getCurrency(),payment.getCreatedAt());
+                                                payment.getAmount(),payment.getCurrency(),payment.getCreatedAt(),"PAYMENT-CREATED");
 
         paymentEventProducer.sendPaymentEvent(event);
 
@@ -99,7 +97,7 @@ public class PaymentService {
         PaymentProcessingEvent event=new PaymentProcessingEvent(payment.getPaymentReference(),
                 payment.getOrderId(),
                 payment.getCustomerId(),payment.getMerchantId(),
-                payment.getAmount(),payment.getCurrency(),"processing",payment.getCreatedAt());
+                payment.getAmount(),payment.getCurrency(),"processing",payment.getCreatedAt(),"PAYMENT-PROCESSING");
 
         paymentEventProducer.sendPaymentEvent(event);
     }
@@ -118,7 +116,8 @@ public class PaymentService {
                     event.amount(),
                     event.currency(),
                     event.reason(),
-                    LocalDateTime.now()
+                    LocalDateTime.now(),
+                    "PAYMENT-SUCCESS"
             );
 
             paymentEventProducer.sendPaymentEvent(successEvent);
@@ -133,7 +132,8 @@ public class PaymentService {
                     event.amount(),
                     event.currency(),
                     result.reason(),
-                    LocalDateTime.now()
+                    LocalDateTime.now(),
+                    "PAYMENT-FAILED"
             );
 
             paymentEventProducer.sendPaymentEvent(failedEvent);
@@ -214,5 +214,41 @@ public class PaymentService {
         updateStatus(payment, PaymentStatus.FAILED);
 
         paymentRepository.save(payment);
+    }
+
+    public void refundPayment(
+            String paymentReference,
+            String merchantId
+    ) {
+        Payment payment = paymentRepository
+                .findByPaymentReference(paymentReference)
+                .orElseThrow(() ->
+                        new PaymentNotFoundException("Payment Not Found")
+                );
+
+        // Merchant ownership check
+        if (!payment.getMerchantId().equals(merchantId)) {
+            throw new PaymentAccessDeniedException(
+                    "You do not have access to this payment"
+            );
+        }
+
+        // SUCCESS → REFUNDED
+        updateStatus(payment, PaymentStatus.REFUNDED);
+
+        paymentRepository.save(payment);
+
+        PaymentRefundEvent event = new PaymentRefundEvent(
+                payment.getPaymentReference(),
+                payment.getOrderId(),
+                payment.getCustomerId(),
+                payment.getMerchantId(),
+                payment.getAmount(),
+                payment.getCurrency(),
+                payment.getUpdatedAt(),
+                "PAYMENT-REFUNDED"
+        );
+
+        paymentEventProducer.sendPaymentEvent(event);
     }
 }

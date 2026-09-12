@@ -1,6 +1,7 @@
 package com.streampay.payment.exception;
 
 import com.streampay.payment.dto.ErrorResponse;
+import org.springframework.cglib.core.Local;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -79,6 +80,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handlePaymentAccessDenied(PaymentAccessDeniedException exception) {
         ErrorResponse errorResponse=new ErrorResponse(HttpStatus.FORBIDDEN.value(),exception.getMessage(),LocalDateTime.now());
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+    }
+
+    @ExceptionHandler(ReconciliationException.class)
+    public ResponseEntity<ErrorResponse> handleReconciliationException(ReconciliationException exception) {
+        ErrorResponse errorResponse= new ErrorResponse(HttpStatus.CONFLICT.value(),exception.getMessage(),LocalDateTime.now());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponse);
     }
 
 

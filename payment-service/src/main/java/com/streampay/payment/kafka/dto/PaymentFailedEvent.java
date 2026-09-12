@@ -11,6 +11,7 @@ public record PaymentFailedEvent (
     BigDecimal amount,
     String currency,
     String reason,
-    LocalDateTime occuredAt
+    LocalDateTime occuredAt,
+    String eventType
 ) implements PaymentEvent{}
 
