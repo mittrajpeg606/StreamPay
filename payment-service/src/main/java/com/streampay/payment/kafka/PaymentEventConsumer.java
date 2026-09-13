@@ -1,7 +1,8 @@
 package com.streampay.payment.kafka;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.streampay.payment.kafka.dto.*;
-import com.streampay.payment.service.PaymentProcessingResult;
 import com.streampay.payment.service.PaymentProcessor;
 import com.streampay.payment.service.PaymentService;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -12,35 +13,61 @@ public class PaymentEventConsumer {
 
     private final PaymentService paymentService;
     private final PaymentProcessor paymentProcessor;
+    private final ObjectMapper objectMapper;
 
-    public PaymentEventConsumer(PaymentService paymentService, PaymentProcessor paymentProcessor) {
+    public PaymentEventConsumer(PaymentService paymentService,PaymentProcessor paymentProcessor,ObjectMapper objectMapper) {
         this.paymentService = paymentService;
         this.paymentProcessor = paymentProcessor;
+        this.objectMapper = objectMapper;
     }
 
     @KafkaListener(topics = "payment-events",groupId = "payment-service-group")
-    public void consumePaymentEvent(PaymentEvent event)
-    {
-        System.out.println("Consumed event" + event);
-        if (event instanceof PaymentCreatedEvent createdEvent) {
-            paymentService.processPayment(createdEvent.paymentReference());
-        }else if (event instanceof PaymentProcessingEvent processingEvent) {
+    public void consumePaymentEvent(String kafkaObject) {
 
-            paymentService.handlePaymentProcessing(processingEvent);
-        }
-        else if (event instanceof PaymentSuccessEvent successEvent) {
+        System.out.println("Consumed event: " + kafkaObject);
 
-            paymentService.markPaymentSuccess(successEvent.paymentReference()
-            );
+        try {
+            JsonNode paymentEvent = objectMapper.readTree(kafkaObject);
 
-        } else if (event instanceof PaymentFailedEvent failedEvent) {
+            String eventType = paymentEvent.get("eventType").asText();
 
-            paymentService.markPaymentFailed(failedEvent.paymentReference()
-            );
-        }
-        else if (event instanceof PaymentRefundEvent refundEvent) {
-            System.out.println("Payment refunded: " + refundEvent.paymentReference()
-            );
+            switch (eventType) {
+
+                case "PAYMENT-CREATED" -> {
+                    PaymentCreatedEvent event = objectMapper.treeToValue(paymentEvent, PaymentCreatedEvent.class);
+
+                    paymentService.processPayment(event.paymentReference());
+                }
+
+                case "PAYMENT-PROCESSING" -> {
+                    PaymentProcessingEvent event = objectMapper.treeToValue(paymentEvent, PaymentProcessingEvent.class);
+
+                    paymentService.handlePaymentProcessing(event);
+                }
+
+                case "PAYMENT-SUCCESS" -> {
+                    PaymentSuccessEvent event = objectMapper.treeToValue(paymentEvent, PaymentSuccessEvent.class);
+
+                    paymentService.markPaymentSuccess(event.paymentReference());
+                }
+
+                case "PAYMENT-FAILED" -> {PaymentFailedEvent event =objectMapper.treeToValue(paymentEvent,PaymentFailedEvent.class);
+
+                    paymentService.markPaymentFailed(event.paymentReference());
+                }
+
+                case "PAYMENT-REFUNDED" -> {
+                    PaymentRefundEvent event = objectMapper.treeToValue(paymentEvent,PaymentRefundEvent.class);
+
+                    System.out.println("Payment refunded: "+ event.paymentReference());
+                }
+
+                default -> System.out.println("Unknown payment event type: " + eventType);
+            }
+
+        } catch (Exception exception) {
+            System.err.println("Failed to consume payment event");
+            exception.printStackTrace();
         }
     }
 }

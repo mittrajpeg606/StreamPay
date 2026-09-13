@@ -1,5 +1,7 @@
 package com.streampay.payment.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.streampay.payment.dto.CreatePaymentRequest;
 import com.streampay.payment.dto.PaymentResponse;
 import com.streampay.payment.entities.Payment;
@@ -9,7 +11,10 @@ import com.streampay.payment.exception.PaymentAccessDeniedException;
 import com.streampay.payment.exception.PaymentNotFoundException;
 import com.streampay.payment.kafka.PaymentEventProducer;
 import com.streampay.payment.kafka.dto.*;
+import com.streampay.payment.outbox.OutboxEvent;
+import com.streampay.payment.outbox.OutboxRepository;
 import com.streampay.payment.repository.PaymentRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -24,15 +29,21 @@ public class PaymentService {
 
     private final PaymentProcessor paymentProcessor;
 
-    public PaymentService(PaymentRepository paymentRepository, PaymentEventProducer paymentEventProducer, PaymentProcessor paymentProcessor)
+    private final ObjectMapper objectMapper;
+
+    private final OutboxRepository outboxRepository;
+
+    public PaymentService(PaymentRepository paymentRepository, PaymentEventProducer paymentEventProducer, PaymentProcessor paymentProcessor, ObjectMapper objectMapper, OutboxRepository outboxRepository)
     {
         this.paymentRepository=paymentRepository;
         this.paymentEventProducer = paymentEventProducer;
         this.paymentProcessor = paymentProcessor;
+        this.objectMapper = objectMapper;
+        this.outboxRepository = outboxRepository;
     }
 
-    public PaymentResponse createPayment(CreatePaymentRequest createPaymentRequest,String customerEmail)
-    {
+    @Transactional
+    public PaymentResponse createPayment(CreatePaymentRequest createPaymentRequest,String customerEmail) {
 
         Payment payment= Payment.builder().paymentReference(getPaymentReference()).
                                            customerId(createPaymentRequest.customerId()).
@@ -46,14 +57,33 @@ public class PaymentService {
                                            status(PaymentStatus.CREATED).build();
 
 
-        PaymentCreatedEvent event=new PaymentCreatedEvent(payment.getPaymentReference(),
+        PaymentCreatedEvent paymentCreatedEvent=new PaymentCreatedEvent(payment.getPaymentReference(),
                                                 payment.getOrderId(),
                                                 payment.getCustomerId(),payment.getMerchantId(),
                                                 payment.getAmount(),payment.getCurrency(),payment.getCreatedAt(),"PAYMENT-CREATED");
 
-        paymentEventProducer.sendPaymentEvent(event);
+        PaymentResponse paymentResponse=toResponse(paymentRepository.save(payment));
+        
+       // paymentEventProducer.sendPaymentEvent(paymentCreatedEvent);
 
-        return toResponse(paymentRepository.save(payment));
+        String payload="";
+        try {
+            payload=objectMapper.writeValueAsString(paymentCreatedEvent);
+        }catch (JsonProcessingException exception)
+        {
+            exception.printStackTrace();
+            throw new RuntimeException("Failed to serialize payment event", exception);
+        }
+
+        
+        OutboxEvent outboxEvent=OutboxEvent.builder().aggregateType("PAYMENT").aggregateId(payment.getPaymentReference())
+                                .eventType(paymentCreatedEvent.eventType())
+                                .createdAt(LocalDateTime.now()).published(false).paymentEvent(payload).build();
+
+
+        outboxRepository.save(outboxEvent);
+
+        return paymentResponse;
     }
 
 
@@ -85,6 +115,7 @@ public class PaymentService {
         return toResponse(payment);
     }
 
+    @Transactional
     public void processPayment(String paymentReference) {
 
         Payment payment = paymentRepository.findByPaymentReference(paymentReference)
@@ -92,23 +123,44 @@ public class PaymentService {
 
         updateStatus(payment, PaymentStatus.PROCESSING);
 
-        paymentRepository.save(payment);
 
-        PaymentProcessingEvent event=new PaymentProcessingEvent(payment.getPaymentReference(),
+        PaymentProcessingEvent paymentProcessingEvent=new PaymentProcessingEvent(payment.getPaymentReference(),
                 payment.getOrderId(),
                 payment.getCustomerId(),payment.getMerchantId(),
                 payment.getAmount(),payment.getCurrency(),"processing",payment.getCreatedAt(),"PAYMENT-PROCESSING");
 
-        paymentEventProducer.sendPaymentEvent(event);
+        paymentRepository.save(payment);
+
+        String payload="";
+        try {
+            payload=objectMapper.writeValueAsString(paymentProcessingEvent);
+        }catch (JsonProcessingException exception)
+        {
+            exception.printStackTrace();
+            throw new RuntimeException("Failed to serialize payment event", exception);
+        }
+
+
+        OutboxEvent outboxEvent=OutboxEvent.builder().aggregateType("PAYMENT").aggregateId(payment.getPaymentReference())
+                .eventType(paymentProcessingEvent.eventType())
+                .createdAt(LocalDateTime.now()).published(false).paymentEvent(payload).build();
+
+
+        outboxRepository.save(outboxEvent);
+
+
+
+        // paymentEventProducer.sendPaymentEvent(event);
     }
 
+    @Transactional
     public void handlePaymentProcessing(PaymentProcessingEvent event) {
 
         PaymentProcessingResult result = paymentProcessor.process(event);
 
         if (result.success()) {
 
-            PaymentSuccessEvent successEvent = new PaymentSuccessEvent(
+            PaymentSuccessEvent paymentSuccessEvent = new PaymentSuccessEvent(
                     event.paymentReference(),
                     event.orderId(),
                     event.customerId(),
@@ -120,11 +172,30 @@ public class PaymentService {
                     "PAYMENT-SUCCESS"
             );
 
-            paymentEventProducer.sendPaymentEvent(successEvent);
+            String payload="";
+            try {
+                payload=objectMapper.writeValueAsString(paymentSuccessEvent);
+            }catch (JsonProcessingException exception)
+            {
+                exception.printStackTrace();
+                throw new RuntimeException("Failed to serialize payment event", exception);
+            }
+
+
+            OutboxEvent outboxEvent=OutboxEvent.builder().aggregateType("PAYMENT").aggregateId(paymentSuccessEvent.paymentReference())
+                    .eventType(paymentSuccessEvent.eventType())
+                    .createdAt(LocalDateTime.now()).published(false).paymentEvent(payload).build();
+
+
+            outboxRepository.save(outboxEvent);
+
+
+
+            // paymentEventProducer.sendPaymentEvent(successEvent);
 
         } else {
 
-            PaymentFailedEvent failedEvent = new PaymentFailedEvent(
+            PaymentFailedEvent paymentFailedEvent= new PaymentFailedEvent(
                     event.paymentReference(),
                     event.orderId(),
                     event.customerId(),
@@ -136,7 +207,24 @@ public class PaymentService {
                     "PAYMENT-FAILED"
             );
 
-            paymentEventProducer.sendPaymentEvent(failedEvent);
+            String payload="";
+            try {
+                payload=objectMapper.writeValueAsString(paymentFailedEvent);
+            }catch (JsonProcessingException exception)
+            {
+                exception.printStackTrace();
+                throw new RuntimeException("Failed to serialize payment event", exception);
+            }
+
+
+            OutboxEvent outboxEvent=OutboxEvent.builder().aggregateType("PAYMENT").aggregateId(paymentFailedEvent.paymentReference())
+                    .eventType(paymentFailedEvent.eventType())
+                    .createdAt(LocalDateTime.now()).published(false).paymentEvent(payload).build();
+
+
+            outboxRepository.save(outboxEvent);
+
+            // paymentEventProducer.sendPaymentEvent(failedEvent);
         }
     }
 
@@ -189,20 +277,21 @@ public class PaymentService {
     }
 
 
+    @Transactional
     public void markPaymentSuccess(String paymentReference) {
 
-        Payment payment = paymentRepository
-                .findByPaymentReference(paymentReference)
-                .orElseThrow(() ->
-                        new PaymentNotFoundException("Payment Not Found")
-                );
+        Payment payment = paymentRepository.findByPaymentReference(paymentReference)
+                .orElseThrow(() ->new PaymentNotFoundException("Payment Not Found"));
+
 
         updateStatus(payment, PaymentStatus.SUCCESS);
 
         paymentRepository.save(payment);
+
     }
 
 
+    @Transactional
     public void markPaymentFailed(String paymentReference) {
 
         Payment payment = paymentRepository
@@ -216,29 +305,21 @@ public class PaymentService {
         paymentRepository.save(payment);
     }
 
-    public void refundPayment(
-            String paymentReference,
-            String merchantId
-    ) {
-        Payment payment = paymentRepository
-                .findByPaymentReference(paymentReference)
-                .orElseThrow(() ->
-                        new PaymentNotFoundException("Payment Not Found")
-                );
+    @Transactional
+    public void refundPayment(String paymentReference,String merchantId) {
+        Payment payment = paymentRepository.findByPaymentReference(paymentReference)
+                .orElseThrow(() -> new PaymentNotFoundException("Payment Not Found"));
 
         // Merchant ownership check
         if (!payment.getMerchantId().equals(merchantId)) {
-            throw new PaymentAccessDeniedException(
-                    "You do not have access to this payment"
-            );
+            throw new PaymentAccessDeniedException("You do not have access to this payment");
         }
 
         // SUCCESS → REFUNDED
         updateStatus(payment, PaymentStatus.REFUNDED);
 
-        paymentRepository.save(payment);
 
-        PaymentRefundEvent event = new PaymentRefundEvent(
+        PaymentRefundEvent paymentRefundEvent = new PaymentRefundEvent(
                 payment.getPaymentReference(),
                 payment.getOrderId(),
                 payment.getCustomerId(),
@@ -249,6 +330,25 @@ public class PaymentService {
                 "PAYMENT-REFUNDED"
         );
 
-        paymentEventProducer.sendPaymentEvent(event);
+        paymentRepository.save(payment);
+
+        String payload="";
+        try {
+            payload=objectMapper.writeValueAsString(paymentRefundEvent);
+        }catch (JsonProcessingException exception)
+        {
+            exception.printStackTrace();
+            throw new RuntimeException("Failed to serialize payment event", exception);
+        }
+
+
+        OutboxEvent outboxEvent=OutboxEvent.builder().aggregateType("PAYMENT").aggregateId(payment.getPaymentReference())
+                .eventType(paymentRefundEvent.eventType())
+                .createdAt(LocalDateTime.now()).published(false).paymentEvent(payload).build();
+
+
+        outboxRepository.save(outboxEvent);
+
+       //  paymentEventProducer.sendPaymentEvent(event);
     }
 }
