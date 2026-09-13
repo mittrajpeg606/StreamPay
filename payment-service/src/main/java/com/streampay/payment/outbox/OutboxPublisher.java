@@ -24,7 +24,7 @@ public class OutboxPublisher {
     }
 
 
-    @Scheduled(fixedDelay = 5000)
+    @Scheduled(fixedDelay=5000)
     private void publishKafkaEvents()
     {
 

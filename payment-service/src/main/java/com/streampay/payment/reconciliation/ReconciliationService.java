@@ -5,6 +5,7 @@ import com.streampay.payment.enums.PaymentStatus;
 import com.streampay.payment.exception.PaymentNotFoundException;
 import com.streampay.payment.exception.ReconciliationException;
 import com.streampay.payment.repository.PaymentRepository;
+import com.streampay.payment.service.PaymentCacheService;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -14,18 +15,20 @@ public class ReconciliationService {
 
     private final PaymentRepository paymentRepository;
     private final ExternalPaymentProvider externalPaymentProvider;
+    private final PaymentCacheService paymentCacheService;
 
-    public ReconciliationService(PaymentRepository paymentRepository, ExternalPaymentProvider externalPaymentProvider) {
+    public ReconciliationService(PaymentRepository paymentRepository, ExternalPaymentProvider externalPaymentProvider, PaymentCacheService paymentCacheService) {
         this.paymentRepository = paymentRepository;
         this.externalPaymentProvider = externalPaymentProvider;
+        this.paymentCacheService = paymentCacheService;
     }
 
 
-    public void reconcile(String paymentReferrence){
+    public void reconcile(String paymentReference){
         // get status from DB
-        Payment payment=paymentRepository.findByPaymentReference(paymentReferrence).orElseThrow(()->new PaymentNotFoundException("Payment Not Found"));
+        Payment payment=paymentRepository.findByPaymentReference(paymentReference).orElseThrow(()->new PaymentNotFoundException("Payment Not Found"));
         // get from external payment provider
-        String externalStatus=externalPaymentProvider.getPaymentStatus(paymentReferrence).toString();
+        String externalStatus=externalPaymentProvider.getPaymentStatus(paymentReference).toString();
         String statusFromDB=payment.getStatus().toString();
 
         if(statusFromDB.equals(externalStatus)){
@@ -34,6 +37,8 @@ public class ReconciliationService {
             payment.setStatus(PaymentStatus.valueOf(externalStatus));
             payment.setUpdatedAt(LocalDateTime.now());
             paymentRepository.save(payment);
+            // remove old payment status data from redis
+            paymentCacheService.evictPayment(paymentReference);
         }else{
             throw new ReconciliationException("invalid reconciliation state"+ statusFromDB + " -> "+ externalStatus);
         }

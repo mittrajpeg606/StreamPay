@@ -1,4 +1,10 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: streampay-redis
+    ports:
+      - "6379:6379"
+
   kafka:
     image: apache/kafka:4.0.0
     container_name: streampay-kafka

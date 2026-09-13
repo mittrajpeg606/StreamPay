@@ -15,6 +15,7 @@ import com.streampay.payment.outbox.OutboxEvent;
 import com.streampay.payment.outbox.OutboxRepository;
 import com.streampay.payment.repository.PaymentRepository;
 import jakarta.transaction.Transactional;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -22,6 +23,8 @@ import java.util.UUID;
 
 @Service
 public class PaymentService {
+
+    private final static String CACHE_KEY="payment:";
 
     private final PaymentRepository paymentRepository;
 
@@ -33,13 +36,16 @@ public class PaymentService {
 
     private final OutboxRepository outboxRepository;
 
-    public PaymentService(PaymentRepository paymentRepository, PaymentEventProducer paymentEventProducer, PaymentProcessor paymentProcessor, ObjectMapper objectMapper, OutboxRepository outboxRepository)
+    private final PaymentCacheService paymentCacheService;
+
+    public PaymentService(PaymentRepository paymentRepository, PaymentEventProducer paymentEventProducer, PaymentProcessor paymentProcessor, ObjectMapper objectMapper, OutboxRepository outboxRepository, PaymentCacheService paymentCacheService)
     {
         this.paymentRepository=paymentRepository;
         this.paymentEventProducer = paymentEventProducer;
         this.paymentProcessor = paymentProcessor;
         this.objectMapper = objectMapper;
         this.outboxRepository = outboxRepository;
+        this.paymentCacheService = paymentCacheService;
     }
 
     @Transactional
@@ -63,6 +69,8 @@ public class PaymentService {
                                                 payment.getAmount(),payment.getCurrency(),payment.getCreatedAt(),"PAYMENT-CREATED");
 
         PaymentResponse paymentResponse=toResponse(paymentRepository.save(payment));
+
+
         
        // paymentEventProducer.sendPaymentEvent(paymentCreatedEvent);
 
@@ -89,30 +97,53 @@ public class PaymentService {
 
     public PaymentResponse getPayment(String paymentReference,String customerEmail){
 
+        PaymentResponse redisData=paymentCacheService.getCachedPayment(paymentReference);
+        if(redisData!=null){
+            // cache hit
+            if(!redisData.customerEmail().equals(customerEmail))
+                throw new PaymentNotFoundException("Payment Not Found");
+            System.out.println("Data from Redis");
+            return redisData;
+        }
+
+
+        // cache miss
         Payment payment=paymentRepository.findByPaymentReferenceAndCustomerEmail(paymentReference,customerEmail)
                 .orElseThrow(()->new PaymentNotFoundException("Payment Not Found"));
 
-        return toResponse(payment);
+
+        PaymentResponse payload=toResponse(payment);
+
+        // populate redis cache
+        paymentCacheService.cachePayment(payload);
+
+        return payload;
 
     }
 
-    public PaymentResponse getPaymentForMerchant(
-            String paymentReference,
-            String merchantId
-    ) {
-        Payment payment = paymentRepository
-                .findByPaymentReference(paymentReference)
-                .orElseThrow(() ->
-                        new PaymentNotFoundException("Payment Not Found")
-                );
+    public PaymentResponse getPaymentForMerchant(String paymentReference,String merchantId) {
 
-        if (!payment.getMerchantId().equals(merchantId)) {
-            throw new PaymentAccessDeniedException(
-                    "You do not have access to this payment"
-            );
+        PaymentResponse redisData=paymentCacheService.getCachedPayment(paymentReference);
+        if(redisData!=null){
+            // cache hit
+            if(!redisData.merchantId().equals(merchantId))
+                throw new PaymentNotFoundException("Payment Not Found");
+            System.out.println("Data from Redis in merchant get method");
+            return redisData;
         }
 
-        return toResponse(payment);
+        Payment payment = paymentRepository.findByPaymentReference(paymentReference)
+                .orElseThrow(() ->new PaymentNotFoundException("Payment Not Found"));
+
+        if (!payment.getMerchantId().equals(merchantId)) {
+            throw new PaymentAccessDeniedException("You do not have access to this payment");
+        }
+
+        // populate redis cache
+
+        PaymentResponse payload=toResponse(payment);
+        paymentCacheService.cachePayment(payload);
+        return payload;
     }
 
     @Transactional
@@ -131,6 +162,9 @@ public class PaymentService {
 
         paymentRepository.save(payment);
 
+        // removing old payment status data from redis
+        paymentCacheService.evictPayment(paymentReference);
+
         String payload="";
         try {
             payload=objectMapper.writeValueAsString(paymentProcessingEvent);
@@ -148,6 +182,8 @@ public class PaymentService {
 
         outboxRepository.save(outboxEvent);
 
+        // removing old payment status data from redis
+        paymentCacheService.evictPayment(paymentReference);
 
 
         // paymentEventProducer.sendPaymentEvent(event);
@@ -288,6 +324,9 @@ public class PaymentService {
 
         paymentRepository.save(payment);
 
+        // removing old payment status data from redis
+        paymentCacheService.evictPayment(paymentReference);
+
     }
 
 
@@ -303,6 +342,9 @@ public class PaymentService {
         updateStatus(payment, PaymentStatus.FAILED);
 
         paymentRepository.save(payment);
+
+        // removing old payment status data from redis
+        paymentCacheService.evictPayment(paymentReference);
     }
 
     @Transactional
@@ -332,6 +374,8 @@ public class PaymentService {
 
         paymentRepository.save(payment);
 
+
+
         String payload="";
         try {
             payload=objectMapper.writeValueAsString(paymentRefundEvent);
@@ -348,6 +392,9 @@ public class PaymentService {
 
 
         outboxRepository.save(outboxEvent);
+
+        // removing old payment status data from redis
+        paymentCacheService.evictPayment(paymentReference);
 
        //  paymentEventProducer.sendPaymentEvent(event);
     }
