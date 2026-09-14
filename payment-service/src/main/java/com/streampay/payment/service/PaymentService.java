@@ -6,16 +6,18 @@ import com.streampay.payment.dto.CreatePaymentRequest;
 import com.streampay.payment.dto.PaymentResponse;
 import com.streampay.payment.entities.Payment;
 import com.streampay.payment.enums.PaymentStatus;
+import com.streampay.payment.exception.IdempotencyException;
 import com.streampay.payment.exception.InvalidPaymentStateException;
 import com.streampay.payment.exception.PaymentAccessDeniedException;
 import com.streampay.payment.exception.PaymentNotFoundException;
+import com.streampay.payment.idempotency.IdempotencyDto;
+import com.streampay.payment.idempotency.IdempotencyService;
 import com.streampay.payment.kafka.PaymentEventProducer;
 import com.streampay.payment.kafka.dto.*;
 import com.streampay.payment.outbox.OutboxEvent;
 import com.streampay.payment.outbox.OutboxRepository;
 import com.streampay.payment.repository.PaymentRepository;
 import jakarta.transaction.Transactional;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -38,7 +40,9 @@ public class PaymentService {
 
     private final PaymentCacheService paymentCacheService;
 
-    public PaymentService(PaymentRepository paymentRepository, PaymentEventProducer paymentEventProducer, PaymentProcessor paymentProcessor, ObjectMapper objectMapper, OutboxRepository outboxRepository, PaymentCacheService paymentCacheService)
+    private final IdempotencyService idempotencyService;
+
+    public PaymentService(PaymentRepository paymentRepository, PaymentEventProducer paymentEventProducer, PaymentProcessor paymentProcessor, ObjectMapper objectMapper, OutboxRepository outboxRepository, PaymentCacheService paymentCacheService, IdempotencyService idempotencyService)
     {
         this.paymentRepository=paymentRepository;
         this.paymentEventProducer = paymentEventProducer;
@@ -46,10 +50,69 @@ public class PaymentService {
         this.objectMapper = objectMapper;
         this.outboxRepository = outboxRepository;
         this.paymentCacheService = paymentCacheService;
+        this.idempotencyService = idempotencyService;
     }
 
     @Transactional
-    public PaymentResponse createPayment(CreatePaymentRequest createPaymentRequest,String customerEmail) {
+    public PaymentResponse createPayment(CreatePaymentRequest createPaymentRequest,String customerEmail,String idempotencyKey) {
+
+        // idempotency of create payment
+
+        String key = idempotencyService.buildKey(
+                customerEmail,
+                idempotencyKey
+        );
+
+        String requestHash =
+                idempotencyService.generateRequestHash(createPaymentRequest);
+
+        IdempotencyDto existingRecord =
+                idempotencyService.getRecord(key);
+
+        if (existingRecord != null) {
+
+            if (!existingRecord.requestHash().equals(requestHash)) {
+                throw new IdempotencyException(
+                        "Idempotency key already used with a different request"
+                );
+            }
+
+            if ("COMPLETED".equals(existingRecord.status())) {
+                try {
+                    return objectMapper.readValue(
+                            existingRecord.response(),
+                            PaymentResponse.class
+                    );
+                } catch (JsonProcessingException exception) {
+                    throw new RuntimeException(
+                            "Failed to deserialize idempotent response",
+                            exception
+                    );
+                }
+            }
+
+            throw new IdempotencyException(
+                    "Payment request is already being processed"
+            );
+        }
+
+        IdempotencyDto processingRecord =
+                new IdempotencyDto(
+                        requestHash,
+                        "PROCESSING",
+                        null,
+                        null
+                );
+
+        boolean reserved =
+                idempotencyService.reserveKey(key, processingRecord);
+
+        if (!reserved) {
+            throw new IdempotencyException(
+                    "Payment request is already being processed"
+            );
+        }
+
 
         Payment payment= Payment.builder().paymentReference(getPaymentReference()).
                                            customerId(createPaymentRequest.customerId()).
@@ -90,6 +153,13 @@ public class PaymentService {
 
 
         outboxRepository.save(outboxEvent);
+
+        // redis mark payment status as complete in redis for idempotent key
+        idempotencyService.completeKey(
+                key,
+                requestHash,
+                paymentResponse
+        );
 
         return paymentResponse;
     }

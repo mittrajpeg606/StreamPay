@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -86,6 +87,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleReconciliationException(ReconciliationException exception) {
         ErrorResponse errorResponse= new ErrorResponse(HttpStatus.CONFLICT.value(),exception.getMessage(),LocalDateTime.now());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponse);
+    }
+
+    @ExceptionHandler(IdempotencyException.class)
+    public ResponseEntity<Map<String, Object>> handleIdempotencyException(
+            IdempotencyException exception
+    ) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("status", 409,"error", "Conflict","message", exception.getMessage()));
     }
 
 

@@ -29,10 +29,10 @@ public class PaymentController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public PaymentResponse createPayment( @Valid @RequestBody CreatePaymentRequest request, Authentication authentication) {
+    public PaymentResponse createPayment(@RequestHeader("Idempotency-Key") String idempotencyKey, @Valid @RequestBody CreatePaymentRequest request, Authentication authentication) {
 
         AuthenticatedUser user = (AuthenticatedUser) authentication.getPrincipal();
-        return paymentService.createPayment(request,user.email());
+        return paymentService.createPayment(request,user.email(),idempotencyKey);
     }
 
 
